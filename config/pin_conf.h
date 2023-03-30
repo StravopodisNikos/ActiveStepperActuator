@@ -1,0 +1,6 @@
+#define MOSI_PIN_DUE 75
+#define MISO_PIN_DUE 74 
+#define SCK_PIN_DUE 76
+#define SS_PIN_DUE_EXT1 4
+#define SS_PIN_DUE_EXT2 10
+#define SS_PIN_DUE_EXT3 52
