@@ -3,9 +3,11 @@
 
 extern float READ_THE_RESPONSE_ONLY_F; // this cannot be defined as const because data type returned is float! -> defined in initialize() before setup() in .ino file
 extern long  READ_THE_RESPONSE_ONLY_L; // this cannot be defined as const because data type returned is float! -> defined in initialize() before setup() in .ino file
+extern float SET_THE_REQUEST_ONLY_F;
+extern long SET_THE_REQUEST_ONLY_L;
 
 // MASTER COMMANDS ID
-const unsigned char TOROFF      = 0 ;
+const unsigned char TOROFF      = 0;
 const unsigned char PING        = 1;
 const unsigned char HOME        = 2;
 const unsigned char GOPOS       = 3;
@@ -21,7 +23,7 @@ const unsigned char READSTATE   = 11;
 // SLAVE STATES
 const unsigned char DIS         = 20; 
 const unsigned char READY       = 21;
-const unsigned char SETGOAL     = 22;
+const unsigned char GOALSET     = 22;
 const unsigned char ASSIGN      = 23;
 const unsigned char EXEC        = 24;
 

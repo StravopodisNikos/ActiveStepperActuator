@@ -5,7 +5,9 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/config/**",
-                "C:/Users/Nikos/Documents/Arduino/libraries/AccelStepper"
+                "C:/Users/Nikos/Documents/Arduino/libraries/AccelStepper",
+                "C:\\Users\\Nikos\\Documents\\Arduino\\libraries\\uart_comm_ovidius",
+                "C:/Users/Nikos/Documents/Arduino/libraries/AccelStepper/src"
             ],
             "defines": [
                 "_DEBUG",

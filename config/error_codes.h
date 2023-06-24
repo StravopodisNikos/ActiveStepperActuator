@@ -4,5 +4,5 @@
 #define ACT_STATE_NOT_EXEC  102
 #define ACT_TIMEOUT_ERROR   103
 #define ACT_WRONG_CMD_ID    104
-#define ACT_WRONG_STATE_ID  105
-
+#define ACT_WRONG_STATE     105
+#define WRONG_SLAVE_STATE   106

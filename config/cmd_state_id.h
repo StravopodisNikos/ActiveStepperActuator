@@ -1,6 +1,6 @@
-// MASTER -->> SLAVE COMMANDS
+// MASTER -->> ASA UNIT COMMANDS
 #define TOROFF      0
-#define PING        (unsigned char ) 1
+#define PING        1
 #define GOPOS       2
 #define ASSVEL      3
 #define ASSACCEL    4
@@ -10,9 +10,9 @@
 #define READTOR     8
 #define READSTATE   9
 
-// SLAVE STATES
+// ASA UNIT STATES
 #define DIS         0 
 #define READY       1
-#define SETGOAL     2
+#define GOALSET     2
 #define ASSIGN      3
 #define EXEC        4     
