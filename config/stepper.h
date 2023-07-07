@@ -1,10 +1,15 @@
-#define MS_1        2000 // Microstepping setting switched on the Driver
-#define MS_2        4000 // Microstepping setting switched on the Driver
+#define MS_1        3200L // Microstepping setting switched on the Driver
+#define MS_2        4000L // Microstepping setting switched on the Driver
 
-#define GR          40   // Gear ratio
+#define GR          40L   // Gear ratio
 
-#define NEMA34_STEP_PIN     17
-#define NEMA34_DIR_PIN      18
-#define NEMA34_EN_PIN       19
+#define NEMA34_STEP_PIN     24
+#define NEMA34_DIR_PIN      26
+#define NEMA34_EN_PIN       22
+#define MIN_PULSE_micros        1 
 
-#define MIN_PULSE_micros    20       
+#define HOME_SWITCH_PIN         23
+#define LEFT_SWITCH_PIN         25
+#define RIGHT_SWITCH_PIN        27
+#define SWITCH_DEBOUNCE_millis  100
+      
