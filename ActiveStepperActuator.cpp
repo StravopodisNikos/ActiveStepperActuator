@@ -4,10 +4,11 @@
 using namespace actuator_ns;
 
 /*
- *  ***************      ActiveStepperActuator      ***************
+ *  ***************** ActiveStepperActuator *****************
  */
 
-ActiveStepperActuator::ActiveStepperActuator(uint8_t ID, int mode, int step_pin, int dir_pin, int en_pin) : _StepperMotor(mode, step_pin, dir_pin) {
+//ActiveStepperActuator::ActiveStepperActuator(uint8_t ID, int mode, int step_pin, int dir_pin, int en_pin ) : _StepperMotor(mode, step_pin, dir_pin) {
+ActiveStepperActuator::ActiveStepperActuator(uint8_t ID, int STEP_PIN, int DIR_PIN, int EN_PIN) : _StepperMotor(STEP_PIN, DIR_PIN, EN_PIN), uart_comm_ns::uart_comm_ovidius() {    
 //ActiveStepperActuator::ActiveStepperActuator(uint8_t ID) {
     // User defined based on stepper/unit configured
     _unit_id = ID;
@@ -17,15 +18,6 @@ ActiveStepperActuator::ActiveStepperActuator(uint8_t ID, int mode, int step_pin,
     UnitSwitches[0] = new ezButton(HOME_SWITCH_PIN);
     UnitSwitches[1] = new ezButton(LEFT_SWITCH_PIN); 
     UnitSwitches[2] = new ezButton(RIGHT_SWITCH_PIN);
-
-
-    // Default for current stepper used in Ovidius joint 1 robot
-    _stepPin = step_pin;
-    _dirPin  = dir_pin;
-    _enPin   = en_pin;
-    _micro_step = MS_1;
-    _gear_ratio = GR;
-    _min_pulse_width = MIN_PULSE_micros;
 
     _home_triggered = false;
     _left_limit_triggered = false;
@@ -49,15 +41,6 @@ bool ActiveStepperActuator::_isValidState(const unsigned char state_received)
     {
         return false;
     }
-}
-
-long ActiveStepperActuator::_ConvertRad2Step(float RAD) {
-    double temp = static_cast<double> (0.15915f * RAD); 
-    return round(_micro_step * _gear_ratio * temp);  // 0.1592 = 1/6.2832, 6.2832 = 2*π
-}
-
-float ActiveStepperActuator::_ConvertStep2Rad(long STEP) {
-    return (float) (6.2832f * STEP) / (_micro_step * _gear_ratio) ; 
 }
 
 /*
@@ -122,7 +105,7 @@ void ActiveStepperActuator::setup_unit()
 {
     // Configure Stepper Motor
     //_setup_motor();
-    _StepperMotor.setCurrentPosition(0);
+    //_StepperMotor.setCurrentPosition(0);
     //ptr2stepper->setCurrentPosition(0);
 
     // Configure Limit Switches
@@ -143,11 +126,11 @@ void ActiveStepperActuator::_saveCurrentPosition() {
     access2eeprom.put(EEPROM_ADDR_CP, _cur_position_rad);
 }
 */
-
+/*
 void ActiveStepperActuator::_assignVelocityProfile_rads(float vel) {
     _StepperMotor.setSpeed((float) _ConvertRad2Step(vel));
 }
-
+*/
 /*
 void ActiveStepperActuator::assignActuatorLimits(float pos, float vel, float accel,  float torq_nm, long cur_mA) {
     _pos_limit_rad = pos;
@@ -181,6 +164,7 @@ void ActiveStepperActuator::_assignUnitID() {
     access2eeprom.write(EEPROM_ADDR_ID, _unit_id);
 }
 */
+/*
 void ActiveStepperActuator::home_unit(Stream &comm_serial) {
 
     UnitSwitches[0]->loop();
@@ -232,8 +216,9 @@ void ActiveStepperActuator::home_unit(Stream &comm_serial) {
     _StepperMotor.setCurrentPosition(_cur_position_steps);
     //_saveCurrentPosition();
 }
-
+*/
 //bool ActiveStepperActuator::go2GoalPos_vel(AccelStepper *ptr2stepper , float abs_pos, float des_vel, Stream &comm_serial) {
+/*
 bool ActiveStepperActuator::go2GoalPos_vel(float abs_pos, float des_vel, Stream &comm_serial) {
 
     // set targets
@@ -255,14 +240,14 @@ bool ActiveStepperActuator::go2GoalPos_vel(float abs_pos, float des_vel, Stream 
     } while ( !(_StepperMotor.distanceToGo() == 0 ));
 
     _cur_position_rad = abs_pos;
-    
-
 }
-
+*/
+/*
 void ActiveStepperActuator::ConversionTester(float RAD, long STEPS, Stream &comm_serial) {
     comm_serial.print("RAD 2 STEPS: "); comm_serial.println(_ConvertRad2Step(RAD));
     comm_serial.print("STEPS 2 RAD: "); comm_serial.println(_ConvertStep2Rad(STEPS));
 }
+*/
 
 void ActiveStepperActuator::_measureCurrentACS712_A()
 {   
@@ -322,13 +307,34 @@ bool ActiveStepperActuator::_checkSafetyBounds(debug_error_type &error_code) {
     
 }
 
+/*
+ *  ***************** CustomAccelStepper *****************
+ */
 
-CustomAccelStepper::CustomAccelStepper(/* args */)
+CustomAccelStepper::CustomAccelStepper(int step_pin, int dir_pin, int en_pin)
 {
+    // Default for current stepper used in Ovidius joint 1 robot
+    _stepPin = step_pin;
+    _dirPin  = dir_pin;
+    _enPin   = en_pin;
+    _min_pulse_width = MIN_PULSE_micros;
+
+    _step_cnt = 0;
+    _last_step_micros = 0;
 }
 
 CustomAccelStepper::~CustomAccelStepper()
 {
+}
+
+unsigned long CustomAccelStepper::_ConvertRad2Step(float RAD) {
+    double temp = static_cast<double> (0.15915f * abs(RAD)); 
+    return round(MS_1_F * GR_F * temp);  // 0.1592 = 1/6.2832, 6.2832 = 2*π
+}
+
+float CustomAccelStepper::_ConvertStep2Rad(unsigned long STEP) {
+    // the sign must be determined with another function!
+    return (float) (6.2832f * STEP) / (MS_1_F * GR_F) ; 
 }
 
 void CustomAccelStepper::_extract_displacement() {
@@ -345,22 +351,175 @@ void CustomAccelStepper::_extract_sigma() {
     }
 }
 
+void CustomAccelStepper::_extract_sigma_v0() {
+    if ( _Vv_rs > _V0_hat_rs )
+    {
+        _sigma_v0 = 1.0f;
+    }
+    else {
+        _sigma_v0 = -1.0f;
+    }    
+}
+
+void CustomAccelStepper::_extract_sigma_v1() {
+    if ( _V1_hat_rs > _Vv_rs )
+    {
+        _sigma_v1 = 1.0f;
+    }
+    else {
+        _sigma_v1 = -1.0f;
+    }    
+}
+
 bool CustomAccelStepper::_trajectory_existance_check() {
     // Eq. (3.14) p.71 Melchiorri Book
     if ( ( (_Amax_rs2 * _h) - 0.5f * abs( sq(_V0_hat_rs)-sq(_V1_hat_rs)) ) < 0)
     {
-        return false;
+        return false; // Feasible
     } else {
-        return true;
+        return true;  // Not feasible
     }
 }
 
-float CustomAccelStepper::_calculate_Vv_4dur_accel() {
+void CustomAccelStepper::_calculate_Vv_4dur_accel() {
     // Eq. for Vv in p.72 Melchiorri Book
     float __aT  = _Amax_rs2 * _T_s;
     float __4ah = 4.0f * _Amax_rs2 * _h;
     float __2aT = 2.0f * _Amax_rs2 * (_V0_hat_rs + _V1_hat_rs) * _T_s;
     float __dV  = _V0_hat_rs - _V1_hat_rs;
     _Vv_rs = 0.5f * ( _V0_hat_rs + _V1_hat_rs + __aT - sqrt( sq(__aT)  -  __4ah  +  __2aT  - sq(__dV) ) );
-    return _Vv_rs;
+}
+
+void CustomAccelStepper::_calculate_Alim_4dur_accel() {
+    // Eq. (3.15) p.72 Melchiorri Book
+    float __sV = _V0_hat_rs + _V1_hat_rs;
+    float __sV2 = sq(_V0_hat_rs) + sq(_V1_hat_rs);
+    _Alim_rs2 = ( (2.0f*_h) - (_T_s*__sV) + sqrt(4.0f*sq(_h) - 4.0f*_h*__sV*_T_s + 2.0f*__sV2*sq(_T_s)) ) / (sq(_T_s));
+}
+
+void CustomAccelStepper::_calculate_Ta() {
+    _Ta_s = abs(_Vv_rs - _V0_hat_rs) / abs(_Amax_rs2) ;
+}
+
+void CustomAccelStepper::_calculate_Td() {
+    _Td_s = abs(_V1_hat_rs - _Vv_rs) / abs(_Amax_rs2) ;
+}
+
+void CustomAccelStepper::_set_theoretical_delta_t() {
+   _dt_th_s = (float) ( _step_k * _Ta_s ) / profile_steps;
+}
+
+void CustomAccelStepper::_calculate_dq() {
+   _dq = _V0_hat_rs +  _sigma_v * _dt_th_s; 
+}
+
+void CustomAccelStepper::_calculate_q() {
+   _q =  _q0_hat_rad + _V0_hat_rs*_dt_th_s + 0.5f * _sigma_v * sq(_dt_th_s);
+}
+
+void CustomAccelStepper::_set_sigma_v() {
+    switch (_cur_phase)
+    {
+    case PROF_PHASE::ACCEL_PHASE:
+        _sigma_v = _sigma_v0;
+        break;
+    case PROF_PHASE::DECEL_PHASE:
+        _sigma_v = _sigma_v1;    
+    default:
+        break;
+    }
+}
+
+void CustomAccelStepper::_calculate_steps2move() {
+    _steps2move = _ConvertRad2Step(abs(_q - _q_prev));
+}
+
+void CustomAccelStepper::_calculate_micro_step_rad() {
+    _micro_step_rad = 6.2832f / (MS_1_F * GR_F);
+}
+
+void CustomAccelStepper::_calculate_single_delay_s() {
+    if (_dq != 0 )
+    {
+       _sd_s = abs(_micro_step_rad/_dq);
+    } else {
+       _sd_s = 0;
+    }
+}
+
+void CustomAccelStepper::_calculate_single_delay_micros() {
+    _sd_micros = (unsigned long) ( _sd_s * 1000000L ); 
+}
+
+void CustomAccelStepper::_calculate_net_single_delay_micros() {
+    _net_sd_micros = (unsigned long) (_sd_micros - _min_pulse_width); 
+}
+
+void CustomAccelStepper::_setTrajectoryPosCon(float q1) {
+    _q0_hat_rad = _cur_q_rad;
+    _q1_hat_rad = q1;
+    _h = _q1_hat_rad - _q0_hat_rad;
+}
+
+void CustomAccelStepper::_setTrajectoryVelCon(float v1) {
+    _V0_hat_rs = _cur_dq_rad;
+    _V1_hat_rs = v1;  // can be violated, if trajectory data lead to not feasible implementation
+}
+
+void CustomAccelStepper::_setTrajectoryTargets(float Tdur, float Vd, float Ad) {
+    _T_s = Tdur;
+    _Vv_rs = Vd;
+    _A_rs2 = Ad;
+    _Amax_rs2 = _A_rs2; // we always consider that A = Amax
+}
+
+void CustomAccelStepper::extractTrajData_4dur_accel() {
+    // Here, based on theory, the following are calculated:
+    // 1. Vv
+    _calculate_Vv_4dur_accel(); // Now Vv is assigned the calculated value!
+    // 2. Ta, Td, Tct
+    _calculate_Ta();
+    _calculate_Td();
+    _Tct_s = _T_s - (_Ta_s + _Td_s);
+    // 3. Alim
+    _calculate_Alim_4dur_accel();
+
+    // IV. In order for a ct velocity pahse to exist always, must be: Amax>Alim
+    if (_Amax_rs2 <= abs(_Alim_rs2))
+    {
+        _Amax_rs2 = abs(_Alim_rs2) + Aoff;
+    }
+}
+
+bool CustomAccelStepper::executeTraj2GoalPos_4dur_accel(float Qgoal, float Time, float Accel, float v_con1) {
+    // I. Set the constraints
+    _setTrajectoryPosCon(Qgoal);
+    _setTrajectoryVelCon(v_con1);
+
+    // II. Set the desired values
+    _setTrajectoryTargets(Time, 0, Accel); // Vv = 0, since it will be computed internally!
+
+    // III. Check if trajectory is feasible
+    if (_trajectory_existance_check()) {
+        // III.a. If true, we change the velocity cons in order to be always feasible
+        _setTrajectoryVelCon(0.0f);
+    } else {
+        // III.b Extract the generic data for the trajectory to be executed next.
+        extractTrajData_4dur_accel();    
+        
+        // V. Raedy to execute the trajectory phases. Here we are sure that 3 phases exist!
+        //executeTrajPhases();
+    }
+}
+
+void CustomAccelStepper::_stepVarLength() {
+    if (micros() - _last_step_micros > _net_sd_micros)
+    {
+        _step_cnt++;
+        digitalWrite(_stepPin, HIGH); // time to finish the step delay and generate the new pulse
+        delayMicroseconds(_min_pulse_width);
+        digitalWrite(_stepPin, LOW);
+        _last_step_micros = micros(); // starts counting time after the FIX PULSE has ended!
+    }
+
 }
