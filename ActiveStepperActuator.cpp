@@ -410,28 +410,29 @@ void CustomAccelStepper::_set_theoretical_delta_t() {
 }
 
 void CustomAccelStepper::_calculate_dq() {
-   _dq = _V0_hat_rs +  _sigma_v * _dt_th_s; 
+   _dq = _V0_hat_rs +  _A_rs2 * _dt_th_s; 
 }
 
 void CustomAccelStepper::_calculate_q() {
-   _q =  _q0_hat_rad + _V0_hat_rs*_dt_th_s + 0.5f * _sigma_v * sq(_dt_th_s);
+   _q =  _q0_hat_rad + _V0_hat_rs*_dt_th_s + 0.5f * _A_rs2 * sq(_dt_th_s);
 }
 
-void CustomAccelStepper::_set_sigma_v() {
+void CustomAccelStepper::_calculate_accel_rs2() {
     switch (_cur_phase)
     {
     case PROF_PHASE::ACCEL_PHASE:
-        _sigma_v = _sigma_v0;
+        _A_rs2 = _sigma_v0 * abs((_Vv_rs-_V0_hat_rs) / _Ta_s);
         break;
     case PROF_PHASE::DECEL_PHASE:
-        _sigma_v = _sigma_v1;    
+        _A_rs2 = _sigma_v1 * abs((_V1_hat_rs - _Vv_rs) / _Td_s);   
     default:
         break;
-    }
+    }    
 }
 
-void CustomAccelStepper::_calculate_steps2move() {
-    _steps2move = _ConvertRad2Step(abs(_q - _q_prev));
+unsigned long CustomAccelStepper::_return_steps2move() {
+    unsigned long steps2move = _ConvertRad2Step(abs(_q - _q_prev));
+    return steps2move;
 }
 
 void CustomAccelStepper::_calculate_micro_step_rad() {
@@ -448,11 +449,18 @@ void CustomAccelStepper::_calculate_single_delay_s() {
 }
 
 void CustomAccelStepper::_calculate_single_delay_micros() {
+    if (_dq != 0 )
+    {
+       _sd_s = abs(_micro_step_rad/_dq);
+    } else {
+       _sd_s = 0;
+    }
     _sd_micros = (unsigned long) ( _sd_s * 1000000L ); 
 }
 
-void CustomAccelStepper::_calculate_net_single_delay_micros() {
-    _net_sd_micros = (unsigned long) (_sd_micros - _min_pulse_width); 
+unsigned long CustomAccelStepper::_return_net_single_delay_micros() {
+    unsigned long net_sd_micros = (unsigned long) (_sd_micros - _min_pulse_width); 
+    return net_sd_micros;
 }
 
 void CustomAccelStepper::_setTrajectoryPosCon(float q1) {
@@ -469,8 +477,8 @@ void CustomAccelStepper::_setTrajectoryVelCon(float v1) {
 void CustomAccelStepper::_setTrajectoryTargets(float Tdur, float Vd, float Ad) {
     _T_s = Tdur;
     _Vv_rs = Vd;
-    _A_rs2 = Ad;
-    _Amax_rs2 = _A_rs2; // we always consider that A = Amax
+    //_A_rs2 = Ad;
+    _Amax_rs2 = Ad; // we always consider that Ad = Amax
 }
 
 void CustomAccelStepper::extractTrajData_4dur_accel() {
@@ -483,6 +491,10 @@ void CustomAccelStepper::extractTrajData_4dur_accel() {
     _Tct_s = _T_s - (_Ta_s + _Td_s);
     // 3. Alim
     _calculate_Alim_4dur_accel();
+    // 4. sigma, sigma_v
+    _extract_sigma();
+    _extract_sigma_v0();
+    _extract_sigma_v1();
 
     // IV. In order for a ct velocity pahse to exist always, must be: Amax>Alim
     if (_Amax_rs2 <= abs(_Alim_rs2))
@@ -490,6 +502,48 @@ void CustomAccelStepper::extractTrajData_4dur_accel() {
         _Amax_rs2 = abs(_Alim_rs2) + Aoff;
     }
 }
+
+void CustomAccelStepper::_extractSegmentData(uint8_t segment_cnt) {
+    _step_k = segment_cnt;
+    _q_prev = _cur_q_rad;
+    _set_theoretical_delta_t();
+    _calculate_dq();
+    _calculate_q();
+
+    _cur_segment_data.tot_steps = _return_steps2move(); // needs _q_prev, _q
+    _calculate_single_delay_micros();
+    _cur_segment_data.net_single_delay_micros = _return_net_single_delay_micros();
+    _cur_segment_data.cur_q_rad = _q;
+}
+
+void CustomAccelStepper::executeTrajPhases() {
+    // I. Accel Phase
+    _cur_phase = PROF_PHASE::ACCEL_PHASE;
+    for (size_t i = 1; i < PHASE_SEGMENTS_MIN; i++)
+    {
+        if (i == 1) // compute acceleration only for the 1st segment
+        {
+            _calculate_accel_rs2(); 
+        }
+        _extractSegmentData(i);
+
+        // Start loop based on the steps it must move for the current segment
+        _step_cnt = 0; // resets counter of steps for the new segment
+        do
+        {
+            // here State machine function can be implemented!
+
+            // runs the motor for a number of steps with the same delay time provided,
+        } while ( !_run_var_delay(_cur_segment_data.tot_steps, _cur_segment_data.net_single_delay_micros) );
+           
+    }
+
+    // II. Ct Vel Phase
+
+    // III. Decel Phase
+    
+}
+
 
 bool CustomAccelStepper::executeTraj2GoalPos_4dur_accel(float Qgoal, float Time, float Accel, float v_con1) {
     // I. Set the constraints
@@ -512,6 +566,21 @@ bool CustomAccelStepper::executeTraj2GoalPos_4dur_accel(float Qgoal, float Time,
     }
 }
 
+bool CustomAccelStepper::_run_var_delay(unsigned long steps, unsigned long delay_micros) {
+    _net_sd_micros = delay_micros;
+    
+    _stepVarLength();
+
+    if (_step_cnt > steps )
+    {
+        return true;  // finished
+    } else {
+        return false;
+    }
+    
+
+}
+
 void CustomAccelStepper::_stepVarLength() {
     if (micros() - _last_step_micros > _net_sd_micros)
     {
@@ -520,6 +589,8 @@ void CustomAccelStepper::_stepVarLength() {
         delayMicroseconds(_min_pulse_width);
         digitalWrite(_stepPin, LOW);
         _last_step_micros = micros(); // starts counting time after the FIX PULSE has ended!
+
+        _cur_q_rad = _q_prev
     }
 
 }

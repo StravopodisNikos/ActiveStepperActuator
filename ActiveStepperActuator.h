@@ -93,19 +93,27 @@ namespace actuator_ns
         void _calculate_Ta();
         void _calculate_Td();
         void _set_theoretical_delta_t();  
-        void _set_sigma_v();      
         void _calculate_dq();
         void _calculate_q();
-        void _calculate_steps2move();
+        void _calculate_accel_rs2();
+        unsigned long _return_steps2move();
         void _calculate_micro_step_rad();
         void _calculate_single_delay_s();
         void _calculate_single_delay_micros();
-        void _calculate_net_single_delay_micros();
+        unsigned long _return_net_single_delay_micros();
         void _setTrajectoryPosCon(float q1);                // Sets the position constraints for the desired trajectory, cons are set based on user provided data
         void _setTrajectoryVelCon(float v1);
         void _setTrajectoryTargets(float Tdur, float Vd, float Ad); // The targets may be overwritten based on the trajectory type
-
+        void _extractSegmentData(uint8_t segment_cnt);
         void _stepVarLength();
+        bool _run_var_delay(unsigned long steps, unsigned long delay_micros);
+
+        struct SegmentDataStruct {
+            unsigned long tot_steps;
+            unsigned long net_single_delay_micros;
+            float cur_q_rad;
+        };
+        SegmentDataStruct _cur_segment_data;
 
     public:
         CustomAccelStepper() = default;
@@ -113,6 +121,7 @@ namespace actuator_ns
         ~CustomAccelStepper();
 
         void extractTrajData_4dur_accel();
+        void executeTrajPhases();
         bool executeTraj2GoalPos_4dur_accel(float Qgoal, float Time, float Accel, float v_con1);
     };
 
