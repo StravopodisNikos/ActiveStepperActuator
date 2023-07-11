@@ -316,6 +316,7 @@ CustomAccelStepper::CustomAccelStepper(int step_pin, int dir_pin, int en_pin, fl
     // Set the Motor Driver Configuration
     _spr = spr;
     _gear_ratio = gr;
+    _calculate_single_micro_step_rad(); // calculate the angle achieved by a single step under this configuration
 
     // Set the Motor Pins
     _stepPin = step_pin;
@@ -330,6 +331,7 @@ CustomAccelStepper::CustomAccelStepper(int step_pin, int dir_pin, int en_pin, fl
     digitalWrite(_dirPin, stp_dir);
 
     _min_pulse_width = MIN_PULSE_micros;
+    
 
     _step_cnt = 0;
     _last_step_micros = 0;
@@ -346,8 +348,8 @@ CustomAccelStepper::~CustomAccelStepper()
 }
 
 unsigned long CustomAccelStepper::_ConvertRad2Step(float RAD) {
-    double temp = static_cast<double> (0.15915f * abs(RAD)); 
-    return round(_spr * _gear_ratio * temp);  // 0.1592 = 1/6.2832, 6.2832 = 2*π
+    float temp = static_cast<float> (0.15915f * abs(RAD)); 
+    return (unsigned long) round(_spr * _gear_ratio * temp);  // 0.1592 = 1/6.2832, 6.2832 = 2*π
 }
 
 float CustomAccelStepper::_ConvertStep2Rad(unsigned long STEP) {
@@ -429,16 +431,20 @@ void CustomAccelStepper::_calculate_Td() {
     _Td_s = abs(_V1_hat_rs - _Vv_rs) / abs(_Amax_rs2) ;
 }
 
-void CustomAccelStepper::_set_theoretical_delta_t() {
-   _dt_th_s = (float) ( _step_k * _Ta_s ) / profile_steps;
+void CustomAccelStepper::_set_theoretical_delta_t(float Tper) {
+   _dt_th_s = (float) ( _step_k * Tper ) / profile_steps;
 }
 
-void CustomAccelStepper::_calculate_dq() {
-   _dq = _V0_hat_rs +  _A_rs2 * _dt_th_s; 
+void CustomAccelStepper::_calculate_dq( float V_last_seg) {
+   _dq = V_last_seg +  _A_rs2 * _dt_th_s; 
 }
 
-void CustomAccelStepper::_calculate_q() {
-   _q =  _q0_hat_rad + _V0_hat_rs*_dt_th_s + 0.5f * _A_rs2 * sq(_dt_th_s);
+void CustomAccelStepper::_calculate_q(float q_last_seg, float V_last_seg) {
+   _q =  q_last_seg + V_last_seg*_dt_th_s + 0.5f * _A_rs2 * sq(_dt_th_s); // q_last_seg = _q0_hat_rad, V_last_seg = _V0_hat_rs for ACCEL PHASE
+}
+
+void CustomAccelStepper::_calculate_q_ctV() {
+   _q =  _q_last_accel +  _Vv_rs * _dt_th_s;
 }
 
 void CustomAccelStepper::_calculate_accel_rs2() {
@@ -454,9 +460,8 @@ void CustomAccelStepper::_calculate_accel_rs2() {
     }    
 }
 
-unsigned long CustomAccelStepper::_return_steps2move() {
-    unsigned long steps2move = _ConvertRad2Step(abs(_q - _q_prev));
-    return steps2move;
+unsigned long CustomAccelStepper::_return_steps2move(float delta_h) {
+    return _ConvertRad2Step(delta_h);
 }
 
 void CustomAccelStepper::_calculate_single_micro_step_rad() {
@@ -464,25 +469,24 @@ void CustomAccelStepper::_calculate_single_micro_step_rad() {
 }
 
 void CustomAccelStepper::_calculate_single_delay_s() {
-    if (_dq != 0 )
-    {
-       _sd_s = abs(_single_micro_step_rad/_dq);
-    } else {
-       _sd_s = 0;
-    }
+    if ( abs(_dq) < MIN_DQ ) {
+        _dq = MIN_DQ;
+    } 
+    _sd_s = abs(_single_micro_step_rad/_dq);
 }
 
 void CustomAccelStepper::_calculate_single_delay_micros() {
-    if (_dq != 0 )
-    {
-       _sd_s = abs(_single_micro_step_rad/_dq);
-    } else {
-       _sd_s = 0;
-    }
-    _sd_micros = (unsigned long) ( _sd_s * 1000000L ); 
+    if ( abs(_dq) < MIN_DQ ) {
+        _dq = MIN_DQ;
+    } 
+    _sd_s = abs(_single_micro_step_rad/_dq);
+    _sd_micros = (unsigned long) ( _sd_s * 1000000L );
 }
 
 unsigned long CustomAccelStepper::_return_net_single_delay_micros() {
+    if ( _sd_micros < _min_pulse_width ) {
+        _sd_micros =  (unsigned long) 2L * _min_pulse_width;
+    } 
     unsigned long net_sd_micros = (unsigned long) (_sd_micros - _min_pulse_width); 
     return net_sd_micros;
 }
@@ -530,18 +534,43 @@ void CustomAccelStepper::_extractTrajData_4dur_accel() {
 
 void CustomAccelStepper::_extractSegmentData(uint8_t segment_cnt) {
     _step_k = segment_cnt;
-    _q_prev = _cur_q_rad;
-    _set_theoretical_delta_t();
-    _calculate_dq();
-    _calculate_q();
+    _q_prev = _cur_segment_data.cur_q_rad;
 
-    _cur_segment_data.tot_steps = _return_steps2move(); // needs _q_prev, _q
+    switch (_cur_phase)
+    {
+        case PROF_PHASE::ACCEL_PHASE:
+            _set_theoretical_delta_t(_Ta_s);
+            _calculate_dq(_V0_hat_rs);
+            _calculate_q(_q0_hat_rad, _V0_hat_rs);
+            // last theoretical q(t) value!
+            break;
+        case PROF_PHASE::DECEL_PHASE:
+            _set_theoretical_delta_t(_Td_s);
+            _calculate_dq(_Vv_rs);  
+            _calculate_q(_q_last_ctVel , _Vv_rs);      
+            break;
+        case PROF_PHASE::CT_VEL_PHASE:
+            _set_theoretical_delta_t(_Tct_s);
+            _dq = _Vv_rs;
+            _calculate_q_ctV();
+            break;        
+        default:
+            break;
+    }
+
+    _delta_h_seg = _q - _q_prev;
+    _cur_segment_data.tot_steps = _return_steps2move(_delta_h_seg); 
     _calculate_single_delay_micros();
     _cur_segment_data.net_single_delay_micros = _return_net_single_delay_micros();
     _cur_segment_data.cur_q_rad = _q;
 }
 
 void CustomAccelStepper::_printSegmentData(Stream &comm_serial) {
+    comm_serial.print("_A_rs2 = "); comm_serial.println(_A_rs2,4);
+    comm_serial.print("_dt_th_s = "); comm_serial.println(_dt_th_s,4);
+    comm_serial.print("_q = "); comm_serial.println(_q,4);
+    comm_serial.print("_dq = "); comm_serial.println(_dq,4);
+
     comm_serial.println("TOTAL STEPS - SINGLE DELAY MICROS - Qt");
     comm_serial.print(_cur_segment_data.tot_steps);  comm_serial.print(" - "); comm_serial.print(_cur_segment_data.net_single_delay_micros);
     comm_serial.print(" - ");  comm_serial.println(_cur_segment_data.cur_q_rad,4);
@@ -570,6 +599,7 @@ void CustomAccelStepper::_executeAccelPhase(Stream &comm_serial) {
         _printSegmentData(comm_serial);
         _runSegment();
     }
+    _q_last_accel = _cur_segment_data.cur_q_rad;
 }
 
 void CustomAccelStepper::_executeDecelPhase(Stream &comm_serial) {
@@ -592,11 +622,14 @@ void CustomAccelStepper::_executeCtVelPhase(Stream &comm_serial) {
     {
         if (i == 1) // compute segment data only for the 1st segment
         {
-            _extractSegmentData(i);
-            _printSegmentData(comm_serial);
+            //_extractSegmentData(i);
+            //_printSegmentData(comm_serial);
         }
+        _extractSegmentData(i);
+        _printSegmentData(comm_serial);
         _runSegment();  
     }
+    _q_last_ctVel = _cur_segment_data.cur_q_rad;
 }
 
 void CustomAccelStepper::_executeTrajPhases(Stream &comm_serial) {
@@ -627,8 +660,12 @@ bool CustomAccelStepper::executeTraj2GoalPos_4dur_accel(float Qgoal, float Time,
         _setTrajectoryVelCon(0.0f);
     }
     // IV. Extract the generic data for the trajectory to be executed next.
-    _extractTrajData_4dur_accel();    
-    // V. Raedy to execute the trajectory phases. Here we are sure that 3 phases exist!
+    _extractTrajData_4dur_accel();
+
+    // V. Ready to execute the trajectory phases. Here we are sure that 3 phases exist!
+    _cur_segment_data.net_single_delay_micros = 0;
+    _cur_segment_data.tot_steps = 0;
+    _cur_segment_data.cur_q_rad = _cur_q_rad;
     _executeTrajPhases(comm_serial);
 }
 

@@ -49,6 +49,7 @@ namespace actuator_ns
         float _q0_hat_rad;
         float _q1_hat_rad;
         float _h;
+        float _delta_h_seg;
         float _V0_hat_rs;
         float _V1_hat_rs;
         float _Vv_rs;
@@ -71,6 +72,8 @@ namespace actuator_ns
         float _dq;
         float _cur_dq_rad;          // last velocity achieved by executed trajectory
         float _q;
+        float _q_last_accel;
+        float _q_last_ctVel;
         float _cur_q_rad;           // last position achieved by executed trajectory
         float _q_prev;
         float _t0_s;
@@ -97,11 +100,12 @@ namespace actuator_ns
         void _calculate_Alim_4dur_accel();
         void _calculate_Ta();
         void _calculate_Td();
-        void _set_theoretical_delta_t();  
-        void _calculate_dq();
-        void _calculate_q();
+        void _set_theoretical_delta_t(float Tper);  
+        void _calculate_dq(float V_last_seg);
+        void _calculate_q(float q_last_seg, float V_last_seg);
+        void _calculate_q_ctV();
         void _calculate_accel_rs2();
-        unsigned long _return_steps2move();
+        unsigned long _return_steps2move(float delta_h);
         void _calculate_single_micro_step_rad();
         void _calculate_single_delay_s();
         void _calculate_single_delay_micros();
