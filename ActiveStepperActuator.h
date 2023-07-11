@@ -6,6 +6,7 @@
  *  Author: Stravopodis N.
  */
 #include "Arduino.h"
+#include <Stream.h>
 //#include "AccelStepper.h"
 //#include "EEPROM.h"
 //#include "SoftwareSerial.h"
@@ -43,6 +44,8 @@ namespace actuator_ns
         int _enPin;
         uint8_t _min_pulse_width;
 
+        float _gear_ratio;
+        float _spr;
         float _q0_hat_rad;
         float _q1_hat_rad;
         float _h;
@@ -75,16 +78,18 @@ namespace actuator_ns
         uint8_t _step_k;
         PROF_PHASE _cur_phase;
         unsigned long _steps2move;
-        double _micro_step_rad;
-        unsigned long _gear_ratio;
+        double _single_micro_step_rad;
         float _sd_s;
         unsigned long _sd_micros;
         unsigned long _net_sd_micros;
 
+        // Flags
+        bool _CT_VEL_PH_EXISTS;
+
         unsigned long _ConvertRad2Step(float RAD);
         float _ConvertStep2Rad(unsigned long STEP);
         void _extract_displacement();
-        void _extract_sigma();
+        void _extract_sigma();   // sets the sign of _h and sets the direction rotation Pin
         void _extract_sigma_v0();
         void _extract_sigma_v1();
         bool _trajectory_existance_check();
@@ -97,7 +102,7 @@ namespace actuator_ns
         void _calculate_q();
         void _calculate_accel_rs2();
         unsigned long _return_steps2move();
-        void _calculate_micro_step_rad();
+        void _calculate_single_micro_step_rad();
         void _calculate_single_delay_s();
         void _calculate_single_delay_micros();
         unsigned long _return_net_single_delay_micros();
@@ -105,8 +110,18 @@ namespace actuator_ns
         void _setTrajectoryVelCon(float v1);
         void _setTrajectoryTargets(float Tdur, float Vd, float Ad); // The targets may be overwritten based on the trajectory type
         void _extractSegmentData(uint8_t segment_cnt);
+        void _printSegmentData(Stream &comm_serial);
+        void _extractTrajData_4dur_accel();
+
+        // Motor stepping functions
         void _stepVarLength();
         bool _run_var_delay(unsigned long steps, unsigned long delay_micros);
+        void _runSegment();  // must be called after _extractSegmentData() has been called. completes the segment for the steps/delay calculated
+        void _update_abs_q_rad();
+        void _executeTrajPhases(Stream &comm_serial);
+        void _executeAccelPhase(Stream &comm_serial);
+        void _executeCtVelPhase(Stream &comm_serial);
+        void _executeDecelPhase(Stream &comm_serial);
 
         struct SegmentDataStruct {
             unsigned long tot_steps;
@@ -117,12 +132,12 @@ namespace actuator_ns
 
     public:
         CustomAccelStepper() = default;
-        CustomAccelStepper(int step_pin, int dir_pin, int en_pin);
+        CustomAccelStepper(int step_pin, int dir_pin, int en_pin, float gr, float spr);
         ~CustomAccelStepper();
 
-        void extractTrajData_4dur_accel();
-        void executeTrajPhases();
-        bool executeTraj2GoalPos_4dur_accel(float Qgoal, float Time, float Accel, float v_con1);
+        bool executeTraj2GoalPos_4dur_accel(float Qgoal, float Time, float Accel, float v_con1, Stream &comm_serial);
+
+        volatile uint8_t stp_dir;
     };
 
     //class ActiveStepperActuator: public AccelStepper, public uart_comm_ns::uart_comm_ovidius
@@ -191,7 +206,8 @@ namespace actuator_ns
             float _voltage_mapped_V;
 
         public:
-            ActiveStepperActuator(uint8_t ID, int STEP_PIN, int DIR_PIN, int EN_PIN);
+            ActiveStepperActuator() = default;
+            ActiveStepperActuator(uint8_t ID, int STEP_PIN, int DIR_PIN, int EN_PIN, float GEAR, float SPR);
             ~ActiveStepperActuator();
             //void assignActuatorLimits(float pos, float vel, float accel,  float torq_nm, long cur_mA);
             //void printActuatorLimits(Stream &comm_serial);
