@@ -417,6 +417,16 @@ bool CustomAccelStepper::_trajectory_existance_check() {
     }
 }
 
+bool CustomAccelStepper::_ctVelPhase_existence_check() {
+    if (  abs(_h * _Amax_rs2) - sq(_Vmax_rs) + 0.5f * ( sq(_V0_hat_rs) + sq(_V1_hat_rs) ) > 0 )
+    {
+        _CT_VEL_PH_EXISTS = true;
+    } else {
+        _CT_VEL_PH_EXISTS = false;
+    }
+    return _CT_VEL_PH_EXISTS;
+}
+
 void CustomAccelStepper::_calculate_Vv_4dur_accel() {
     // Eq. for Vv in p.72 Melchiorri Book
     float __aT  = _Amax_rs2 * _T_s;
@@ -424,6 +434,10 @@ void CustomAccelStepper::_calculate_Vv_4dur_accel() {
     float __2aT = 2.0f * _Amax_rs2 * (_V0_hat_rs + _V1_hat_rs) * _T_s;
     float __dV  = _V0_hat_rs - _V1_hat_rs;
     _Vv_rs = 0.5f * ( _V0_hat_rs + _V1_hat_rs + __aT - sqrt( sq(__aT)  -  __4ah  +  __2aT  - sq(__dV) ) );
+}
+
+void CustomAccelStepper::_calculate_Vlim_4vel_accel() {
+    _Vv_rs = sqrt( abs(_h * _Amax_rs2) + 0.5f * ( sq(_V0_hat_rs) + sq(_V1_hat_rs) ) );
 }
 
 void CustomAccelStepper::_calculate_Alim_4dur_accel() {
@@ -439,6 +453,11 @@ void CustomAccelStepper::_calculate_Ta() {
 
 void CustomAccelStepper::_calculate_Td() {
     _Td_s = abs(_V1_hat_rs - _Vv_rs) / abs(_Amax_rs2) ;
+}
+
+void CustomAccelStepper::_calculate_T() {
+    // Used only in subcase of Preassigned Vel-Accel Trajectory Implementation
+    
 }
 
 void CustomAccelStepper::_set_theoretical_delta_t(float Tper) {
@@ -516,7 +535,8 @@ void CustomAccelStepper::_setTrajectoryVelCon(float v1) {
 
 void CustomAccelStepper::_setTrajectoryTargets(float Tdur, float Vd, float Ad) {
     _T_s = Tdur;
-    _Vv_rs = Vd;
+    _Vv_rs = Vd;    // remains only for the dur accel case-redundant
+    _Vmax_rs = Vd;  // we always consider that Vd = Vmax
     //_A_rs2 = Ad;
     _Amax_rs2 = Ad; // we always consider that Ad = Amax
 }
@@ -542,6 +562,34 @@ void CustomAccelStepper::_extractTrajData_4dur_accel() {
         _Amax_rs2 = abs(_Alim_rs2) + Aoff;
         _CT_VEL_PH_EXISTS  = true;
     }
+}
+
+void CustomAccelStepper::_extractTrajData_4vel_accel() {
+    // Here, based on theory, the following are calculated:
+    // 1. Determine if ct velocity phase exists
+    if (!_ctVelPhase_existence_check())
+    {
+        // 1.1. Extract new Vlim if ct velocity phase doesn't exist
+       _calculate_Vlim_4vel_accel(); // _Vv_rs is assigned the calculated Vlim
+        // 2. Calculate the timing of the phases
+        _calculate_Ta();
+        _calculate_Td();
+        _Tct_s = 0.0f; // redundant
+        _T_s = _Ta_s + _Td_s;
+    } else {
+        _Vv_rs = _Vmax_rs;
+        // 2. Calculate the timing of the phases - But now T must be explicitly extracted
+        _calculate_Ta();
+        _calculate_Td();
+        _calculate_T();
+        _Tct_s = _T_s - (_Ta_s + _Td_s);
+    }
+
+    // 3. sigma, sigma_v
+    _extract_sigma();
+    _extract_sigma_v0();
+    _extract_sigma_v1();
+
 }
 
 void CustomAccelStepper::_extractSegmentData(uint8_t segment_cnt) {
@@ -658,7 +706,6 @@ void CustomAccelStepper::_executeTrajPhases(Stream &comm_serial) {
     _executeDecelPhase(comm_serial);
 }
 
-
 bool CustomAccelStepper::executeTraj2GoalPos_4dur_accel(float Qgoal, float Time, float Accel, float v_con1, Stream &comm_serial) {
     // I. Set the constraints
     _setTrajectoryPosCon(Qgoal);
@@ -678,8 +725,32 @@ bool CustomAccelStepper::executeTraj2GoalPos_4dur_accel(float Qgoal, float Time,
     // V. Ready to execute the trajectory phases. Here we are sure that 3 phases exist!
     //_cur_segment_data.cur_q_rad = _cur_q_rad;
     _executeTrajPhases(comm_serial);
+
+    return _evaluate_trajectory();
 }
 
+bool CustomAccelStepper::executeTraj2GoalPos_4vel_accel(float Qgoal, float Vel, float Accel, float v_con1, Stream &comm_serial) {
+    // I. Set the constraints
+    _setTrajectoryPosCon(Qgoal);
+    _setTrajectoryVelCon(v_con1);
+
+    // II. Set the desired values
+    _setTrajectoryTargets(0, Vel, Accel); // T = 0, since it will be computed internally!
+
+    // III. Check if trajectory is feasible
+    if (_trajectory_existance_check()) {
+        // III.a. If true, we change the velocity cons in order to be always feasible
+        _setTrajectoryVelCon(0.0f);
+    }
+    // IV. Extract the generic data for the trajectory to be executed next.
+    _extractTrajData_4vel_accel();
+
+    // V. Ready to execute the trajectory phases. Here we are sure that 3 phases exist!
+    //_cur_segment_data.cur_q_rad = _cur_q_rad;
+    _executeTrajPhases(comm_serial);
+
+    return _evaluate_trajectory();
+}
 
 bool CustomAccelStepper::_run_var_delay(unsigned long steps, unsigned long delay_micros) {
     _net_sd_micros = delay_micros;
@@ -692,8 +763,6 @@ bool CustomAccelStepper::_run_var_delay(unsigned long steps, unsigned long delay
     } else {
         return false;
     }
-    
-
 }
 
 void CustomAccelStepper::_stepVarLength() {
@@ -731,6 +800,15 @@ void CustomAccelStepper::_update_abs_dq_rs()
     }
 
     return;
+}
+
+bool CustomAccelStepper::_evaluate_trajectory() {
+    if ( abs( abs(_q1_hat_rad) - abs(_ABS_Q_RAD)) > POS_TOL_RAD )
+    {
+        return false;
+    } else {
+        return true;
+    }
 }
 
 void CustomAccelStepper::_data_log_print() {

@@ -95,10 +95,13 @@ namespace actuator_ns
         void _extract_sigma_v0();
         void _extract_sigma_v1();
         bool _trajectory_existance_check();
+        bool _ctVelPhase_existence_check();
         void _calculate_Vv_4dur_accel();
         void _calculate_Alim_4dur_accel();
+        void _calculate_Vlim_4vel_accel();
         void _calculate_Ta();
         void _calculate_Td();
+        void _calculate_T();
         void _set_theoretical_delta_t(float Tper);  
         void _calculate_dq(float V_last_seg);
         void _calculate_q(float q_last_seg, float V_last_seg);
@@ -115,6 +118,8 @@ namespace actuator_ns
         void _extractSegmentData(uint8_t segment_cnt);
         void _printSegmentData(Stream &comm_serial);
         void _extractTrajData_4dur_accel();
+        void _extractTrajData_4vel_accel();
+        bool _evaluate_trajectory();
 
         // Motor stepping functions
         void _stepVarLength();
@@ -146,7 +151,8 @@ namespace actuator_ns
         ~CustomAccelStepper();
 
         bool executeTraj2GoalPos_4dur_accel(float Qgoal, float Time, float Accel, float v_con1, Stream &comm_serial);
-        
+        bool executeTraj2GoalPos_4vel_accel(float Qgoal, float Vel, float Accel, float v_con1, Stream &comm_serial);
+
         // REAL TIME VARS FOR POS/VEL DATA LOGGING
         float _ABS_Q_RAD;
         float _ABS_DQ_RS;
