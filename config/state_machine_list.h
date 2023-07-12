@@ -3,3 +3,6 @@
 
 #define MAX_TIMEOUT_MILLIS_1    1
 #define MAX_TIMEOUT_MILLIS_10   10
+
+#define LOG_TIME_MILLIS         100
+#define BUFFER_SIZE_POS_VEL     2

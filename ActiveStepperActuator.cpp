@@ -8,7 +8,7 @@ using namespace actuator_ns;
  */
 
 //ActiveStepperActuator::ActiveStepperActuator(uint8_t ID, int mode, int step_pin, int dir_pin, int en_pin ) : _StepperMotor(mode, step_pin, dir_pin) {
-ActiveStepperActuator::ActiveStepperActuator(uint8_t ID, int STEP_PIN, int DIR_PIN, int EN_PIN, float GEAR, float SPR) : _StepperMotor(STEP_PIN, DIR_PIN, EN_PIN, GEAR, SPR), uart_comm_ns::uart_comm_ovidius() {    
+ActiveStepperActuator::ActiveStepperActuator(uint8_t ID, int STEP_PIN, int DIR_PIN, int EN_PIN, float GEAR, float SPR) : _StepperMotor(STEP_PIN, DIR_PIN, EN_PIN, GEAR, SPR), uart_comm_ns::uart_comm_ovidius() { 
 //ActiveStepperActuator::ActiveStepperActuator(uint8_t ID) {
     // User defined based on stepper/unit configured
     _unit_id = ID;
@@ -311,7 +311,7 @@ bool ActiveStepperActuator::_checkSafetyBounds(debug_error_type &error_code) {
  *  ***************** CustomAccelStepper *****************
  */
 
-CustomAccelStepper::CustomAccelStepper(int step_pin, int dir_pin, int en_pin, float gr, float spr)
+CustomAccelStepper::CustomAccelStepper(int step_pin, int dir_pin, int en_pin, float gr, float spr): uart_comm_ns::uart_comm_ovidius() 
 {   
     // Set the Motor Driver Configuration
     _spr = spr;
@@ -339,8 +339,18 @@ CustomAccelStepper::CustomAccelStepper(int step_pin, int dir_pin, int en_pin, fl
     _CT_VEL_PH_EXISTS = true;
 
     // Initialization of current position/velocity -> ONLY temporary, until homing function is implemented
-    _cur_q_rad = 0.0f;
+    _cur_q_rad = 0.0f; // (*) Input from .txt file
     _cur_dq_rad = 0.0f;
+
+    _cur_segment_data.cur_q_rad = _cur_q_rad;
+    _cur_segment_data.net_single_delay_micros = 0;
+    _cur_segment_data.tot_steps = 0;
+
+    // Real time data logging
+    _ABS_Q_RAD = 0.0f; // (*) Input from .txt file
+    _ABS_Q_RAD_STEP0 = 0.0f;
+    _ABS_DQ_RS = 0.0f;
+    _last_log_millis = 0;
 }
 
 CustomAccelStepper::~CustomAccelStepper()
@@ -354,7 +364,7 @@ unsigned long CustomAccelStepper::_ConvertRad2Step(float RAD) {
 
 float CustomAccelStepper::_ConvertStep2Rad(unsigned long STEP) {
     // the sign must be determined with another function!
-    return (float) (6.2832f * STEP) / (_spr * _gear_ratio) ; 
+    return (float) ( (6.2832f * STEP) / (_spr * _gear_ratio) ); 
 }
 
 void CustomAccelStepper::_extract_displacement() {
@@ -492,13 +502,15 @@ unsigned long CustomAccelStepper::_return_net_single_delay_micros() {
 }
 
 void CustomAccelStepper::_setTrajectoryPosCon(float q1) {
-    _q0_hat_rad = _cur_q_rad;
+    _cur_segment_data.cur_q_rad = _ABS_Q_RAD; // assigned here to be close to the constraint for initial pos.
+                                              // this value is used for the theoretical equations calculalation.
+    _q0_hat_rad = _ABS_Q_RAD;
     _q1_hat_rad = q1;
     _h = _q1_hat_rad - _q0_hat_rad;
 }
 
 void CustomAccelStepper::_setTrajectoryVelCon(float v1) {
-    _V0_hat_rs = _cur_dq_rad;
+    _V0_hat_rs = _ABS_DQ_RS; // previous: _cur_dq_rad;
     _V1_hat_rs = v1;  // can be violated, if trajectory data lead to not feasible implementation
 }
 
@@ -563,6 +575,8 @@ void CustomAccelStepper::_extractSegmentData(uint8_t segment_cnt) {
     _calculate_single_delay_micros();
     _cur_segment_data.net_single_delay_micros = _return_net_single_delay_micros();
     _cur_segment_data.cur_q_rad = _q;
+
+    _update_abs_dq_rs(); // update the angular velocity, only 1 time per segment, since velocity remains ct @each segment of each phase
 }
 
 void CustomAccelStepper::_printSegmentData(Stream &comm_serial) {
@@ -570,6 +584,9 @@ void CustomAccelStepper::_printSegmentData(Stream &comm_serial) {
     comm_serial.print("_dt_th_s = "); comm_serial.println(_dt_th_s,4);
     comm_serial.print("_q = "); comm_serial.println(_q,4);
     comm_serial.print("_dq = "); comm_serial.println(_dq,4);
+
+    comm_serial.print("_ABS_Q_RAD = "); comm_serial.println(_ABS_Q_RAD,4);
+    comm_serial.print("_ABS_DQ_RS = "); comm_serial.println(_ABS_DQ_RS,4);
 
     comm_serial.println("TOTAL STEPS - SINGLE DELAY MICROS - Qt");
     comm_serial.print(_cur_segment_data.tot_steps);  comm_serial.print(" - "); comm_serial.print(_cur_segment_data.net_single_delay_micros);
@@ -579,10 +596,11 @@ void CustomAccelStepper::_printSegmentData(Stream &comm_serial) {
 void CustomAccelStepper::_runSegment() {
     // Start loop based on the steps/delay it must move for the current segment
     _step_cnt = 0; // resets counter of steps for the new segment
+    _ABS_Q_RAD_STEP0 = _ABS_Q_RAD;
     do
     {
         // Here State machine function can be implemented!
-
+        _data_log_print();
         // runs the motor for a number of steps with the same delay time provided,
     } while ( !_run_var_delay(_cur_segment_data.tot_steps, _cur_segment_data.net_single_delay_micros) ); 
 }
@@ -596,7 +614,7 @@ void CustomAccelStepper::_executeAccelPhase(Stream &comm_serial) {
             _calculate_accel_rs2(); 
         }
         _extractSegmentData(i);
-        _printSegmentData(comm_serial);
+        //_printSegmentData(comm_serial);
         _runSegment();
     }
     _q_last_accel = _cur_segment_data.cur_q_rad;
@@ -611,7 +629,7 @@ void CustomAccelStepper::_executeDecelPhase(Stream &comm_serial) {
             _calculate_accel_rs2(); 
         }
         _extractSegmentData(i);
-        _printSegmentData(comm_serial);
+        //_printSegmentData(comm_serial);
         _runSegment();
     }
 }
@@ -620,13 +638,8 @@ void CustomAccelStepper::_executeCtVelPhase(Stream &comm_serial) {
     _cur_phase = PROF_PHASE::CT_VEL_PHASE;
     for (size_t i = 1; i < PHASE_SEGMENTS_MIN; i++)
     {
-        if (i == 1) // compute segment data only for the 1st segment
-        {
-            //_extractSegmentData(i);
-            //_printSegmentData(comm_serial);
-        }
         _extractSegmentData(i);
-        _printSegmentData(comm_serial);
+        //_printSegmentData(comm_serial);
         _runSegment();  
     }
     _q_last_ctVel = _cur_segment_data.cur_q_rad;
@@ -663,9 +676,7 @@ bool CustomAccelStepper::executeTraj2GoalPos_4dur_accel(float Qgoal, float Time,
     _extractTrajData_4dur_accel();
 
     // V. Ready to execute the trajectory phases. Here we are sure that 3 phases exist!
-    _cur_segment_data.net_single_delay_micros = 0;
-    _cur_segment_data.tot_steps = 0;
-    _cur_segment_data.cur_q_rad = _cur_q_rad;
+    //_cur_segment_data.cur_q_rad = _cur_q_rad;
     _executeTrajPhases(comm_serial);
 }
 
@@ -701,8 +712,34 @@ void CustomAccelStepper::_stepVarLength() {
 
 void CustomAccelStepper::_update_abs_q_rad()
 {
-  _cur_q_rad = _cur_q_rad + (_sigma * _ConvertStep2Rad(_step_cnt));
-
+  _ABS_Q_RAD = _ABS_Q_RAD_STEP0 + (_sigma * _ConvertStep2Rad(_step_cnt));
   return;
+}
+
+void CustomAccelStepper::_update_abs_dq_rs()
+{
+    if ( abs(_sd_s) < MIN_PULSE_s)
+    {
+        _sd_s = MIN_PULSE_s;
+    }
+    
+    if (_dq > 0)
+    {
+        _ABS_DQ_RS = (float) (_single_micro_step_rad / _sd_s) ;
+    } else {
+        _ABS_DQ_RS = (float) -1.0f * (_single_micro_step_rad / _sd_s) ; 
+    }
+
+    return;
+}
+
+void CustomAccelStepper::_data_log_print() {
+    if (millis() - _last_log_millis > LOG_TIME_MILLIS) {
+        float data_buffer[BUFFER_SIZE_POS_VEL] = {_ABS_Q_RAD, _ABS_DQ_RS};
+
+        serialPrintDataBuffer( data_buffer, BUFFER_SIZE_POS_VEL); 
+        _last_log_millis = millis();    
+    }
+
 }
 

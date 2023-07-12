@@ -10,7 +10,7 @@
 #define NEMA34_DIR_PIN      26
 #define NEMA34_EN_PIN       22
 #define MIN_PULSE_micros    19 
-
+#define MIN_PULSE_s         0.000019
 #define HOME_SWITCH_PIN         23
 #define LEFT_SWITCH_PIN         25
 #define RIGHT_SWITCH_PIN        27

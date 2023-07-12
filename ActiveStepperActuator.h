@@ -34,7 +34,7 @@ namespace actuator_ns
     enum fn_exec_state {success, failed};
     //class actuator_ns::CustomAccelStepper; // Forward declaration of the base class
 
-    class CustomAccelStepper
+    class CustomAccelStepper: public uart_comm_ns::uart_comm_ovidius
     {
     private:
         unsigned long _step_cnt;
@@ -43,7 +43,6 @@ namespace actuator_ns
         int _dirPin;
         int _enPin;
         uint8_t _min_pulse_width;
-
         float _gear_ratio;
         float _spr;
         float _q0_hat_rad;
@@ -121,11 +120,18 @@ namespace actuator_ns
         void _stepVarLength();
         bool _run_var_delay(unsigned long steps, unsigned long delay_micros);
         void _runSegment();  // must be called after _extractSegmentData() has been called. completes the segment for the steps/delay calculated
-        void _update_abs_q_rad();
         void _executeTrajPhases(Stream &comm_serial);
         void _executeAccelPhase(Stream &comm_serial);
         void _executeCtVelPhase(Stream &comm_serial);
         void _executeDecelPhase(Stream &comm_serial);
+
+        // Real time Data
+        void _update_abs_q_rad();
+        void _update_abs_dq_rs();
+
+        // Data logging
+        unsigned long _last_log_millis;
+        void _data_log_print();
 
         struct SegmentDataStruct {
             unsigned long tot_steps;
@@ -140,7 +146,13 @@ namespace actuator_ns
         ~CustomAccelStepper();
 
         bool executeTraj2GoalPos_4dur_accel(float Qgoal, float Time, float Accel, float v_con1, Stream &comm_serial);
+        
+        // REAL TIME VARS FOR POS/VEL DATA LOGGING
+        float _ABS_Q_RAD;
+        float _ABS_DQ_RS;
+        float _ABS_Q_RAD_STEP0; // the abs pos when step counter is set to ), before each segment execution!
 
+        // DIR IS CHANGED USING FEEDBACK FROM ACTUATOR LIMIT SWITCHES
         volatile uint8_t stp_dir;
     };
 
@@ -176,8 +188,6 @@ namespace actuator_ns
             unsigned char _cur_state;
 
             // stepper settings
-
-            
             volatile bool _left_limit_triggered;
             volatile bool _right_limit_triggered;
             volatile bool _home_triggered;
