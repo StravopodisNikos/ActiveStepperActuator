@@ -457,7 +457,12 @@ void CustomAccelStepper::_calculate_Td() {
 
 void CustomAccelStepper::_calculate_T() {
     // Used only in subcase of Preassigned Vel-Accel Trajectory Implementation
-    
+    float __1mV0_2 = sq(1.0f - (_V0_hat_rs/_Vmax_rs));
+    float __1mV1_2 = sq(1.0f - (_V1_hat_rs/_Vmax_rs));  
+    float __VAmax  = _Vmax_rs / _Amax_rs2;
+    float __hVmax  = _h / _Vmax_rs;
+
+    _T_s = __hVmax + 0.5f * __VAmax * __1mV0_2 + 0.5f * __VAmax * __1mV1_2;
 }
 
 void CustomAccelStepper::_set_theoretical_delta_t(float Tper) {
@@ -535,7 +540,7 @@ void CustomAccelStepper::_setTrajectoryVelCon(float v1) {
 
 void CustomAccelStepper::_setTrajectoryTargets(float Tdur, float Vd, float Ad) {
     _T_s = Tdur;
-    _Vv_rs = Vd;    // remains only for the dur accel case-redundant
+    //_Vv_rs = Vd;    // remains only for the dur accel case-redundant
     _Vmax_rs = Vd;  // we always consider that Vd = Vmax
     //_A_rs2 = Ad;
     _Amax_rs2 = Ad; // we always consider that Ad = Amax
@@ -607,7 +612,12 @@ void CustomAccelStepper::_extractSegmentData(uint8_t segment_cnt) {
         case PROF_PHASE::DECEL_PHASE:
             _set_theoretical_delta_t(_Td_s);
             _calculate_dq(_Vv_rs);  
-            _calculate_q(_q_last_ctVel , _Vv_rs);      
+            if (_CT_VEL_PH_EXISTS)
+            {
+                _calculate_q(_q_last_ctVel , _Vv_rs); 
+            } else {
+                _calculate_q(_q_last_accel , _Vv_rs);
+            }    
             break;
         case PROF_PHASE::CT_VEL_PHASE:
             _set_theoretical_delta_t(_Tct_s);
@@ -662,7 +672,7 @@ void CustomAccelStepper::_executeAccelPhase(Stream &comm_serial) {
             _calculate_accel_rs2(); 
         }
         _extractSegmentData(i);
-        //_printSegmentData(comm_serial);
+        _printSegmentData(comm_serial);
         _runSegment();
     }
     _q_last_accel = _cur_segment_data.cur_q_rad;
@@ -677,7 +687,7 @@ void CustomAccelStepper::_executeDecelPhase(Stream &comm_serial) {
             _calculate_accel_rs2(); 
         }
         _extractSegmentData(i);
-        //_printSegmentData(comm_serial);
+        _printSegmentData(comm_serial);
         _runSegment();
     }
 }
@@ -687,7 +697,7 @@ void CustomAccelStepper::_executeCtVelPhase(Stream &comm_serial) {
     for (size_t i = 1; i < PHASE_SEGMENTS_MIN; i++)
     {
         _extractSegmentData(i);
-        //_printSegmentData(comm_serial);
+        _printSegmentData(comm_serial);
         _runSegment();  
     }
     _q_last_ctVel = _cur_segment_data.cur_q_rad;
@@ -723,7 +733,6 @@ bool CustomAccelStepper::executeTraj2GoalPos_4dur_accel(float Qgoal, float Time,
     _extractTrajData_4dur_accel();
 
     // V. Ready to execute the trajectory phases. Here we are sure that 3 phases exist!
-    //_cur_segment_data.cur_q_rad = _cur_q_rad;
     _executeTrajPhases(comm_serial);
 
     return _evaluate_trajectory();
@@ -746,7 +755,6 @@ bool CustomAccelStepper::executeTraj2GoalPos_4vel_accel(float Qgoal, float Vel, 
     _extractTrajData_4vel_accel();
 
     // V. Ready to execute the trajectory phases. Here we are sure that 3 phases exist!
-    //_cur_segment_data.cur_q_rad = _cur_q_rad;
     _executeTrajPhases(comm_serial);
 
     return _evaluate_trajectory();
