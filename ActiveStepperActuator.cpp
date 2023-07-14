@@ -8,11 +8,12 @@ using namespace actuator_ns;
  */
 
 //ActiveStepperActuator::ActiveStepperActuator(uint8_t ID, int mode, int step_pin, int dir_pin, int en_pin ) : _StepperMotor(mode, step_pin, dir_pin) {
-ActiveStepperActuator::ActiveStepperActuator(uint8_t ID, int STEP_PIN, int DIR_PIN, int EN_PIN, float GEAR, float SPR) : _StepperMotor(STEP_PIN, DIR_PIN, EN_PIN, GEAR, SPR), uart_comm_ns::uart_comm_ovidius() { 
-//ActiveStepperActuator::ActiveStepperActuator(uint8_t ID) {
+//ActiveStepperActuator::ActiveStepperActuator(uint8_t ID, int STEP_PIN, int DIR_PIN, int EN_PIN, float GEAR, float SPR) : _StepperMotor(STEP_PIN, DIR_PIN, EN_PIN, GEAR, SPR), uart_comm_ns::uart_comm_ovidius() { 
+ActiveStepperActuator::ActiveStepperActuator(uint8_t ID, int STEP_PIN, int DIR_PIN, int EN_PIN, float GEAR, float SPR) : _StepperMotor(STEP_PIN, DIR_PIN, EN_PIN, GEAR, SPR) { 
     // User defined based on stepper/unit configured
     _unit_id = ID;
     //_assignUnitID(); // reset unit eeprom if ID has changed
+    _ABS_Q_RAD = 0.7845f;
 
     // Create class objects for the limit switches
     UnitSwitches[0] = new ezButton(HOME_SWITCH_PIN);
@@ -27,10 +28,49 @@ ActiveStepperActuator::ActiveStepperActuator(uint8_t ID, int STEP_PIN, int DIR_P
 
 
 ActiveStepperActuator::~ActiveStepperActuator() {}
-
 /*
- *  ***************     Private Methods     ***************
- */
+void ActiveStepperActuator::_importInitializationData(Stream& comm_serial) {
+    comm_serial.println(INIT);
+    comm_serial.println("UNIT_ID,CUR_ABS_Q_RAD,POS_LIMIT_RAD,VEL_LIMIT_RS,ACCEL_LIMIT_RS2,TORQUE_LIMIT_NM,CUR_LIMIT_A");
+
+    while (!comm_serial.available()) {delay(10);}
+
+    // Read the data received from Python
+    String data = comm_serial.readString();
+
+    // Split the response by comma
+    String variables[INIT_VARS];  // Update the size if needed
+    int index = 0;
+    int lastIndex = 0;
+    while (index < INIT_VARS && lastIndex < data.length()) {
+        int commaIndex = data.indexOf(',', lastIndex);
+        if (commaIndex == -1) {
+        commaIndex = data.length();
+        }
+        variables[index] = data.substring(lastIndex, commaIndex);
+        lastIndex = commaIndex + 1;
+        index++;
+    }
+
+    // Parse the values and assign them to the respective variables
+    _unit_id        = (uint8_t) variables[0].toInt();
+    _ABS_Q_RAD      = variables[1].toFloat();
+    _pos_limit_rad  = variables[2].toFloat();
+    _vel_limit_rads = variables[3].toFloat();
+    _accel_limit_rads2  = variables[4].toFloat();
+    _torque_limit_nm    = variables[5].toFloat();
+    _cur_limit_mA       = variables[6].toFloat();   
+ 
+} */
+
+void ActiveStepperActuator::_importFloat_from_Logger(uint8_t cmd2logger, float &imported_data) {
+    uart_comm_ovidius::get4Bytes<float>(imported_data, DEBUG_ASA, SerialASA2LOGGER,  cmd2logger);
+}
+
+void ActiveStepperActuator::_exportFloat_to_Logger(uint8_t cmd2logger, float exported_data) {
+    uart_comm_ovidius::send4Bytes<float>(exported_data, DEBUG_ASA, SerialASA2LOGGER,  cmd2logger);
+}
+
 bool ActiveStepperActuator::_isValidState(const unsigned char state_received)
 {
     if ( (state_received == DIS) || (state_received == READY) || (state_received == GOALSET) || (state_received == ASSIGN) || (state_received == EXEC) )
@@ -101,10 +141,11 @@ void ActiveStepperActuator::_setup_motor() {
 */
 
 //void ActiveStepperActuator::setup_unit(AccelStepper *ptr2stepper)
-void ActiveStepperActuator::setup_unit()
+void ActiveStepperActuator::setup_unit(Stream& comm_serial)
 {
     // Configure Stepper Motor
     //_setup_motor();
+    //_importInitializationData(comm_serial);
     //_StepperMotor.setCurrentPosition(0);
     //ptr2stepper->setCurrentPosition(0);
 
@@ -117,6 +158,14 @@ void ActiveStepperActuator::setup_unit()
     pinMode(ACS_VOLTAGE_AN_PIN, INPUT);
 }
 
+float ActiveStepperActuator::printCurrentAbsPosition() {
+    _importFloat_from_Logger(CMD_SINGLE_READ_ABSQRAD, _ABS_Q_RAD);
+    return _ABS_Q_RAD;
+}
+
+void ActiveStepperActuator::saveCurrentAbsPosition() {
+    _exportFloat_to_Logger(CMD_SINGLE_WRITE_ABSQRAD, _ABS_Q_RAD);
+}
 /*
 void ActiveStepperActuator::_initCurrentPosition() {
     access2eeprom.get(EEPROM_ADDR_CP, _cur_position_rad);
@@ -131,40 +180,20 @@ void ActiveStepperActuator::_assignVelocityProfile_rads(float vel) {
     _StepperMotor.setSpeed((float) _ConvertRad2Step(vel));
 }
 */
-/*
-void ActiveStepperActuator::assignActuatorLimits(float pos, float vel, float accel,  float torq_nm, long cur_mA) {
-    _pos_limit_rad = pos;
-    access2eeprom.put(EEPROM_ADDR_PL, _pos_limit_rad);
-    _vel_limit_rads = vel;
-    access2eeprom.put(EEPROM_ADDR_VL, _vel_limit_rads); 
-    _accel_limit_rads2 = accel;
-    access2eeprom.put(EEPROM_ADDR_AL, _accel_limit_rads2);   
-    _torque_limit_nm = torq_nm;
-    access2eeprom.put(EEPROM_ADDR_TL, _torque_limit_nm); 
-    _cur_limit_mA = cur_mA;
-    access2eeprom.put(EEPROM_ADDR_CL, _cur_limit_mA);     
-}
-
-
 void ActiveStepperActuator::printActuatorLimits(Stream &comm_serial) {
-    comm_serial.println("READING EEPROM...");
-    access2eeprom.get(EEPROM_ADDR_PL, _pos_limit_rad);
     comm_serial.print("POSITION LIMIT[rad]: [ "); comm_serial.print(_pos_limit_rad,4); comm_serial.println(" ]");
-    access2eeprom.get(EEPROM_ADDR_VL, _vel_limit_rads);
     comm_serial.print("VELOCITY LIMIT[rs]: [ "); comm_serial.print(_vel_limit_rads,4); comm_serial.println(" ]");   
-    access2eeprom.get(EEPROM_ADDR_AL, _accel_limit_rads2);
     comm_serial.print("ACCELERATION LIMIT[rs2]: [ "); comm_serial.print(_accel_limit_rads2,4); comm_serial.println(" ]");  
-    access2eeprom.get(EEPROM_ADDR_TL, _torque_limit_nm);
     comm_serial.print("TORQUE LIMIT[Nm]: [ "); comm_serial.print(_torque_limit_nm,4); comm_serial.println(" ]");
-    access2eeprom.get(EEPROM_ADDR_CL, _cur_limit_mA);
     comm_serial.print("CURRENT LIMIT[mA]: [ "); comm_serial.print(_cur_limit_mA); comm_serial.println(" ]");        
 }
 
+/*
 void ActiveStepperActuator::_assignUnitID() {
     access2eeprom.write(EEPROM_ADDR_ID, _unit_id);
 }
-*/
-/*
+
+
 void ActiveStepperActuator::home_unit(Stream &comm_serial) {
 
     UnitSwitches[0]->loop();

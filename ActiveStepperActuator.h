@@ -163,7 +163,8 @@ namespace actuator_ns
     };
 
     //class ActiveStepperActuator: public AccelStepper, public uart_comm_ns::uart_comm_ovidius
-    class ActiveStepperActuator: public actuator_ns::CustomAccelStepper, public uart_comm_ns::uart_comm_ovidius
+    //class ActiveStepperActuator: public actuator_ns::CustomAccelStepper, public uart_comm_ns::uart_comm_ovidius
+    class ActiveStepperActuator: public actuator_ns::CustomAccelStepper
     {
         private:
             //AccelStepper _StepperMotor;
@@ -214,6 +215,9 @@ namespace actuator_ns
 
 
             bool _isValidState(const unsigned char state_received);
+            //void _importInitializationData(Stream& comm_serial); // PYTHON DOESNT WORK. DEPRECATED
+            void _exportFloat_to_Logger(uint8_t cmd2logger, float exported_data);
+            void _importFloat_from_Logger(uint8_t cmd2logger, float &imported_data);
             //void _initCurrentPosition();
             //void _saveCurrentPosition();
             //void _assignVelocityProfile_rads(float vel);
@@ -229,13 +233,14 @@ namespace actuator_ns
             ActiveStepperActuator() = default;
             ActiveStepperActuator(uint8_t ID, int STEP_PIN, int DIR_PIN, int EN_PIN, float GEAR, float SPR);
             ~ActiveStepperActuator();
-            //void assignActuatorLimits(float pos, float vel, float accel,  float torq_nm, long cur_mA);
-            //void printActuatorLimits(Stream &comm_serial);
+            void printActuatorLimits(Stream &comm_serial);
             //void ConversionTester(float RAD, long STEPS, Stream &comm_serial);
 
             void wake_up();
             //void setup_unit(AccelStepper *ptr2stepper);
-            void setup_unit();
+            void setup_unit(Stream& comm_serial);
+            float printCurrentAbsPosition();
+            void  saveCurrentAbsPosition();
             //void home_unit(Stream &comm_serial);
             //bool go2GoalPos_vel(AccelStepper *ptr2stepper ,float abs_pos, float des_vel, Stream &comm_serial);
             //bool go2GoalPos_vel(float abs_pos, float des_vel, Stream &comm_serial);

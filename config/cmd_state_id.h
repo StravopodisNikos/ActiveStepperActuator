@@ -11,7 +11,8 @@
 #define READSTATE   9
 
 // ASA UNIT STATES
-#define DIS         0 
+#define INIT        "INIT_DATA" 
+#define DIS         0
 #define READY       1
 #define GOALSET     2
 #define ASSIGN      3
